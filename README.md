@@ -14,14 +14,15 @@ graph TD
     IGW --> PubSub1[Public Subnet 1<br/>10.0.1.0/24<br/>us-east-1a]
     IGW --> PubSub2[Public Subnet 2<br/>10.0.2.0/24<br/>us-east-1b]
     PubSub1 --> ALB_SG[ALB Security Group<br/>inbound: 443 from 0.0.0.0/0]
+    PubSub2 --> ALB_SG
     ALB_SG -->|port 8080 from ALB SG| App_SG[App Security Group<br/>Private Subnets]
     App_SG -->|port 5432 from App SG| DB_SG[DB Security Group<br/>Data Subnets]
     PubSub1 --> NAT[NAT Gateway]
     NAT -->|outbound only| PrivSub1[Private Subnet 1<br/>10.0.10.0/24]
     NAT -->|outbound only| PrivSub2[Private Subnet 2<br/>10.0.20.0/24]
-    DataSub1[Data Subnet 1<br/>10.0.100.0/24<br/>no internet route]
-    DataSub2[Data Subnet 2<br/>10.0.200.0/24<br/>no internet route]
-    VPC -->|all traffic| FlowLogs[VPC Flow Logs → S3]
+    DB_SG --> DataSub1[Data Subnet 1<br/>10.0.100.0/24<br/>no internet route]
+    DB_SG --> DataSub2[Data Subnet 2<br/>10.0.200.0/24<br/>no internet route]
+    IGW -.->|VPC-wide traffic logged| FlowLogs[VPC Flow Logs → S3]
 ```
 
 ---
