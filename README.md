@@ -26,11 +26,11 @@ graph TD
 
 ---
 
-## What this is
+## Overview
 
 I built a three-tier VPC that mirrors how production AWS environments are typically structured for a web application: a public tier for load balancers, a private tier for application servers, and a data tier for databases. Each tier has its own subnets, route tables, and security boundaries.
 
-The focus was on getting the security controls right — chained security groups that don't use hardcoded CIDRs, NACLs as a stateless second layer, and flow logs capturing all traffic to S3 for forensics.
+The focus was on getting the security controls right: chained security groups that don't use hardcoded CIDRs, NACLs as a stateless second layer, and flow logs capturing all traffic to S3 for forensics.
 
 ---
 
@@ -82,14 +82,14 @@ terraform/
 
 Three route tables, one per tier:
 - Public: `0.0.0.0/0 → Internet Gateway`
-- Private: `0.0.0.0/0 → NAT Gateway` (outbound only — no inbound from internet)
+- Private: `0.0.0.0/0 → NAT Gateway` (outbound only, no inbound from internet)
 - Data: no default route (fully isolated from internet, inbound and outbound)
 
 ---
 
 ## Security groups
 
-The three security groups are chained — each one references the previous group as its source rather than using IP CIDRs. This is the correct pattern for multi-tier applications.
+The three security groups are chained: each one references the previous group as its source rather than using IP CIDRs. This is the correct pattern for multi-tier applications.
 
 ```hcl
 # ALB SG: accepts HTTPS from internet
@@ -117,7 +117,7 @@ ingress {
 }
 ```
 
-The DB has no egress rule defined. By default, AWS blocks all inbound traffic not explicitly allowed — the DB SG only opens port 5432 to the App SG, nothing else.
+The DB has no egress rule defined. By default, AWS blocks all inbound traffic not explicitly allowed. The DB SG only opens port 5432 to the App SG, nothing else.
 
 ---
 
@@ -138,7 +138,7 @@ rule 200 - allow TCP 1024-65535 from 0.0.0.0/0
 rule 100 - allow all to 0.0.0.0/0
 ```
 
-The ephemeral port range (1024-65535) is required because TCP responses use dynamically assigned ports. Without this rule, the NACL blocks the return packets and connections fail — something that's easy to miss and hard to debug.
+The ephemeral port range (1024-65535) is required because TCP responses use dynamically assigned ports. Without this rule, the NACL blocks the return packets and connections fail, something that's easy to miss and hard to debug.
 
 ---
 
@@ -183,7 +183,7 @@ All 6 subnets across two AZs. The naming convention (`-public-`, `-private-`, `-
 ### 4. Route tables — three tiers
 ![Route tables](screenshots/Route_tables.png)
 
-Three route tables, one per tier. Public routes through the IGW, private routes through the NAT gateway, data has no default route. The absence of a route is the control — you can't add a route to nowhere, you just don't add one.
+Three route tables, one per tier. Public routes through the IGW, private routes through the NAT gateway, data has no default route. The absence of a route is the control; you can't add a route to nowhere, you just don't add one.
 
 ---
 
@@ -197,30 +197,30 @@ All three security groups: ALB, App, and DB. Each one named with the project pre
 ### 6. Security group rules — chained references
 ![SG rules](screenshots/Security_group_rules.png)
 
-The App SG inbound rules showing the source as the ALB SG ID (not a CIDR). Same pattern on the DB SG pointing to the App SG ID. This is the chaining pattern — if you replace the ALB SG, you update one reference and all downstream rules stay correct.
+The App SG inbound rules showing the source as the ALB SG ID (not a CIDR). Same pattern on the DB SG pointing to the App SG ID. This is the chaining pattern: if you replace the ALB SG, you update one reference and all downstream rules stay correct.
 
 ---
 
 ### 7. NAT gateway
 ![NAT gateway](screenshots/nat_gateway.png)
 
-NAT gateway deployed in the first public subnet with an Elastic IP. Private subnets route outbound traffic through this — they can initiate connections to the internet (software updates, API calls) but cannot receive inbound connections. The data subnets don't route through NAT at all.
+NAT gateway deployed in the first public subnet with an Elastic IP. Private subnets route outbound traffic through this; they can initiate connections to the internet (software updates, API calls) but cannot receive inbound connections. The data subnets don't route through NAT at all.
 
 ---
 
 ## Security decisions
 
 **Why chain security groups instead of using CIDRs?**
-If you hardcode a CIDR like `10.0.10.0/24` as the source in the DB SG, anything with an IP in that range can reach the database — not just the app servers. Referencing the App SG by ID means only instances actually attached to the App SG can connect, regardless of IP. It also means you don't have to update the rule if you re-subnet.
+If you hardcode a CIDR like `10.0.10.0/24` as the source in the DB SG, anything with an IP in that range can reach the database, not just the app servers. Referencing the App SG by ID means only instances actually attached to the App SG can connect, regardless of IP. It also means you don't have to update the rule if you re-subnet.
 
 **Why does the data tier have no internet route at all?**
-The database tier should never initiate or receive internet connections. Removing the route entirely is stronger than blocking it with a security group rule — a misconfigured SG can be changed accidentally, but a missing route table entry is harder to overlook. Defense in depth: no route + SG restriction.
+The database tier should never initiate or receive internet connections. Removing the route entirely is stronger than blocking it with a security group rule. A misconfigured SG can be changed accidentally, but a missing route table entry is harder to overlook. Defense in depth: no route + SG restriction.
 
 **Why NACLs in addition to security groups?**
-Security groups are stateful — they track connections and automatically allow return traffic. NACLs are stateless — every packet is evaluated independently. Having both means a misconfigured security group doesn't automatically bypass the network layer. They're independent controls operating at different layers (instance vs. subnet).
+Security groups are stateful: they track connections and automatically allow return traffic. NACLs are stateless: every packet is evaluated independently. Having both means a misconfigured security group doesn't automatically bypass the network layer. They're independent controls operating at different layers (instance vs. subnet).
 
 **Why log ALL traffic instead of just REJECT?**
-ACCEPT logs show what's actually communicating inside the VPC. REJECT logs alone tell you what's being blocked, but you can't reconstruct a full traffic picture. For incident investigation, you need both — what went through and what was stopped.
+ACCEPT logs show what's actually communicating inside the VPC. REJECT logs alone tell you what's being blocked, but you can't reconstruct a full traffic picture. For incident investigation, you need both: what went through and what was stopped.
 
 ---
 
